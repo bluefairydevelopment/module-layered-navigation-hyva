@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © 2026 Blue Fairy Development. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
+    <module name="BlueFairy_LayeredNavigationHyva">
+        <sequence>
+            <module name="BlueFairy_LayeredNavigation"/>
+            <module name="Hyva_Theme"/>
+        </sequence>
+    </module>
+</config>

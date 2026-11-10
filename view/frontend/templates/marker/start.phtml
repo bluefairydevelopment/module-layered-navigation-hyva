@@ -1,0 +1,244 @@
+<?php
+/**
+ * Copyright © 2026 Blue Fairy Development. All rights reserved.
+ */
+declare(strict_types=1);
+
+/** @var \BlueFairy\LayeredNavigation\Block\Marker $block */
+/** @var \Magento\Framework\Escaper $escaper */
+/** @var \Hyva\Theme\ViewModel\HyvaCsp $hyvaCsp */
+/** @var \BlueFairy\LayeredNavigation\ViewModel\Navigation $viewModel */
+$viewModel = $block->getData('bfln_view_model');
+$config = $viewModel->getScriptConfig();
+// Under a strict content security policy a script that arrives with a fetched page cannot be started.
+$inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
+?>
+<link rel="stylesheet" href="<?= $escaper->escapeUrl($block->getViewFileUrl('BlueFairy_LayeredNavigationHyva::css/bfln.css')) ?>">
+<div id="bfln-products-start" class="bfln-marker-start" hidden
+     data-bfln-ajax="<?= $config['ajax'] ? '1' : '0' ?>"
+     data-bfln-inline="<?= $inlineAllowed ? '1' : '0' ?>"></div>
+<script src="<?= $escaper->escapeUrl($block->getViewFileUrl('BlueFairy_LayeredNavigation::js/bfln-core.js')) ?>" defer></script>
+<script>
+    (function () {
+        'use strict';
+
+        var DECLINED = 'bfln-declined';
+
+        // Once an update has proved impossible on this store, later choices of the visit skip the wasted fetch.
+        function hasDeclined() {
+            try {
+                return window.sessionStorage.getItem(DECLINED) === '1';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function rememberDecline() {
+            try {
+                window.sessionStorage.setItem(DECLINED, '1');
+            } catch (e) {
+                // No storage: the next choice simply tries again.
+            }
+        }
+
+        // The Alpine components a node asks for by name: x-data="initPriceBox()", or x-data="initPriceBox"
+        // in a theme built for a strict policy.
+        function componentNames(root) {
+            var nodes = Array.from(root.querySelectorAll('[x-data]'));
+
+            if (root.hasAttribute && root.hasAttribute('x-data')) {
+                nodes.unshift(root);
+            }
+
+            return nodes.map(function (node) {
+                var match = /^\s*([A-Za-z_$][\w$]*)\s*(?:\(|$)/.exec(node.getAttribute('x-data') || '');
+
+                return match ? match[1] : null;
+            }).filter(Boolean);
+        }
+
+        // Whether a script declares the function, and not one whose name only begins the same way.
+        function defines(name) {
+            var declaration = new RegExp('function\\s+' + name.replace(/\$/g, '\\$') + '\\s*\\(');
+
+            return function (text) {
+                return declaration.test(text);
+            };
+        }
+
+        function isInlineScript(node) {
+            return node.tagName === 'SCRIPT' && !node.getAttribute('src');
+        }
+
+        // The inline scripts inside a node, and the node itself when it is one.
+        function scriptTexts(root) {
+            var scripts = Array.from(root.querySelectorAll('script:not([src])'));
+
+            if (isInlineScript(root)) {
+                scripts.unshift(root);
+            }
+
+            return scripts.map(function (script) {
+                return script.textContent.trim();
+            }).filter(Boolean);
+        }
+
+        // The page's own JavaScript: not data blocks of another type, and not what a noscript element holds.
+        function pageScriptTexts(root) {
+            return Array.from(root.querySelectorAll('script:not([src])')).filter(function (script) {
+                var type = (script.getAttribute('type') || '').toLowerCase();
+
+                return (type === '' || type === 'text/javascript' || type === 'application/javascript' || type === 'module') &&
+                    !(script.closest && script.closest('noscript'));
+            }).map(function (script) {
+                return script.textContent.trim();
+            }).filter(Boolean);
+        }
+
+        // A script copied from a fetched page does not run. One standing directly in the product
+        // list is replaced with a copy that does; Hyva's own helper does the same for the ones inside.
+        function activate(element) {
+            var fresh;
+
+            if (!isInlineScript(element)) {
+                window.hyva.activateScripts(element);
+
+                return;
+            }
+            fresh = document.createElement('script');
+            if (element.type) {
+                fresh.type = element.type;
+            }
+            fresh.textContent = element.textContent;
+            element.parentNode.replaceChild(fresh, element);
+        }
+
+        function start() {
+            var marker = document.getElementById('bfln-products-start');
+
+            if (!marker || !window.BflnCore || marker.hasAttribute('data-bfln-started')) {
+                return;
+            }
+            marker.setAttribute('data-bfln-started', '');
+            var inlineAllowed = marker.getAttribute('data-bfln-inline') === '1',
+                pending = [],
+                pendingNames = [];
+
+            window.BflnCore.create({
+                window: window,
+                document: document,
+                ajax: marker.getAttribute('data-bfln-ajax') === '1' && !hasDeclined(),
+
+                // A product list can bring scripts of its own, and can need page scripts the list it replaces
+                // never asked for (a list with no products loads none). Where the store's policy allows it
+                // they are started after the update; where it does not, the page is loaded the ordinary way.
+                accept: function (fetched) {
+                    var start = fetched.getElementById('bfln-products-start'),
+                        end = fetched.getElementById('bfln-products-end'),
+                        nodes = [],
+                        regionTexts = [],
+                        known, node, missing, outside, found, i;
+
+                    pending = [];
+                    pendingNames = [];
+                    if (!start || !end) {
+                        return true;
+                    }
+                    for (node = start.nextElementSibling; node && node !== end; node = node.nextElementSibling) {
+                        nodes.push(node);
+                        regionTexts = regionTexts.concat(scriptTexts(node));
+                    }
+                    missing = [];
+                    nodes.forEach(function (item) {
+                        componentNames(item).forEach(function (name) {
+                            if (typeof window[name] !== 'function' && !regionTexts.some(defines(name)) &&
+                                missing.indexOf(name) === -1) {
+                                missing.push(name);
+                            }
+                        });
+                    });
+                    if (!inlineAllowed) {
+                        known = scriptTexts(document);
+                        if (missing.length || regionTexts.some(function (text) { return known.indexOf(text) === -1; })) {
+                            rememberDecline();
+
+                            return false;
+                        }
+
+                        return true;
+                    }
+                    outside = pageScriptTexts(fetched);
+                    for (i = 0; i < missing.length; i++) {
+                        found = outside.filter(defines(missing[i]))[0];
+                        if (!found) {
+                            pending = [];
+                            pendingNames = [];
+
+                            return false;
+                        }
+                        pendingNames.push(missing[i]);
+                        if (pending.indexOf(found) === -1) {
+                            pending.push(found);
+                        }
+                    }
+
+                    return true;
+                },
+
+                onUpdated: function (elements) {
+                    var formKey = window.hyva && window.hyva.getFormKey ? window.hyva.getFormKey() : '',
+                        stillMissing;
+
+                    // Page scripts the new list needs come first, so its components find them.
+                    pending.forEach(function (text) {
+                        var script = document.createElement('script');
+
+                        script.textContent = text;
+                        document.head.appendChild(script);
+                    });
+                    // A strict-policy theme registers its components when Alpine starts, which has passed.
+                    stillMissing = pendingNames.filter(function (name) {
+                        return typeof window[name] !== 'function';
+                    });
+                    pendingNames.forEach(function (name) {
+                        if (window.Alpine && typeof window.Alpine.data === 'function' && typeof window[name] === 'function') {
+                            window.Alpine.data(name, window[name]);
+                        }
+                    });
+                    pending = [];
+                    pendingNames = [];
+                    // The store's policy refused the script after all, or the theme keeps the function to
+                    // itself: the list would stand there with dead buttons. The page is loaded instead, and
+                    // later choices in this visit load it directly.
+                    if (stillMissing.length) {
+                        rememberDecline();
+                        window.location.reload();
+
+                        return;
+                    }
+
+                    elements.forEach(function (element) {
+                        if (formKey) {
+                            element.querySelectorAll('input[name="form_key"]').forEach(function (input) {
+                                input.value = formKey;
+                            });
+                        }
+                        if (inlineAllowed && window.hyva && window.hyva.activateScripts) {
+                            activate(element);
+                        }
+                    });
+                    if (elements.length > 1 && elements[1].getBoundingClientRect().top < 0) {
+                        elements[1].scrollIntoView();
+                    }
+                }
+            }).start();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start);
+        } else {
+            start();
+        }
+    })();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © 2026 Blue Fairy Development. All rights reserved.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <!-- On a Hyva theme the navigation starts from a plain script instead of RequireJS. -->
+        <referenceBlock name="bluefairy.layerednav.products.start" template="BlueFairy_LayeredNavigationHyva::marker/start.phtml"/>
+    </body>
+</page>

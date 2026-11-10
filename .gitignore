@@ -1,0 +1,9 @@
+/.idea/
+.phpunit.result.cache
+docs/screenshots/
+node_modules
+/.cache/
+**/.cache/
+**/Test/Playwright/playwright-report/
+**/Test/Playwright/test-results/
+**/Test/Playwright/test-results*/
