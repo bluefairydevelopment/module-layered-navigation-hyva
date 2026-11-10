@@ -41,7 +41,8 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             }
         }
 
-        // The Alpine components a node asks for by name, as in x-data="initPriceBox()".
+        // The Alpine components a node asks for by name: x-data="initPriceBox()", or x-data="initPriceBox"
+        // in a theme built for a strict policy.
         function componentNames(root) {
             var nodes = Array.from(root.querySelectorAll('[x-data]'));
 
@@ -50,7 +51,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             }
 
             return nodes.map(function (node) {
-                var match = /^\s*([A-Za-z_$][\w$]*)\s*\(/.exec(node.getAttribute('x-data') || '');
+                var match = /^\s*([A-Za-z_$][\w$]*)\s*(?:\(|$)/.exec(node.getAttribute('x-data') || '');
 
                 return match ? match[1] : null;
             }).filter(Boolean);
@@ -105,7 +106,8 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             }
             marker.setAttribute('data-bfln-started', '');
             var inlineAllowed = marker.getAttribute('data-bfln-inline') === '1',
-                pending = [];
+                pending = [],
+                pendingNames = [];
 
             window.BflnCore.create({
                 window: window,
@@ -123,6 +125,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                         known, node, missing, outside, found, i;
 
                     pending = [];
+                    pendingNames = [];
                     if (!start || !end) {
                         return true;
                     }
@@ -154,9 +157,11 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                         found = outside.filter(defines(missing[i]))[0];
                         if (!found) {
                             pending = [];
+                            pendingNames = [];
 
                             return false;
                         }
+                        pendingNames.push(missing[i]);
                         if (pending.indexOf(found) === -1) {
                             pending.push(found);
                         }
@@ -175,7 +180,14 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                         script.textContent = text;
                         document.head.appendChild(script);
                     });
+                    // A strict-policy theme registers its components when Alpine starts, which has passed.
+                    pendingNames.forEach(function (name) {
+                        if (window.Alpine && typeof window.Alpine.data === 'function' && typeof window[name] === 'function') {
+                            window.Alpine.data(name, window[name]);
+                        }
+                    });
                     pending = [];
+                    pendingNames = [];
 
                     elements.forEach(function (element) {
                         if (formKey) {

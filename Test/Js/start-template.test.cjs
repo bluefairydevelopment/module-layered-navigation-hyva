@@ -66,7 +66,7 @@ function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, r
         getAttribute: (name) => attributes[name],
         setAttribute: (name, value) => { attributes[name] = value; }
     };
-    const state = {created: [], started: 0, activated: [], listeners: {}, made: [], appended: [], storage};
+    const state = {created: [], started: 0, activated: [], listeners: {}, made: [], appended: [], registered: [], storage};
     const document = {
         readyState,
         getElementById: (id) => (id === 'bfln-products-start' ? marker : null),
@@ -79,6 +79,7 @@ function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, r
         createElement: (tag) => { const made = {tagName: tag.toUpperCase(), type: '', textContent: ''}; state.made.push(made); return made; }
     };
     const window = Object.assign({
+        Alpine: {data: (name, fn) => state.registered.push([name, typeof fn])},
         hyva: {getFormKey: () => 'KEY123', activateScripts: (element) => state.activated.push(element)}
     }, functions);
 
@@ -169,6 +170,7 @@ test('a list that needs a page script this page never loaded gets it, where scri
     assert.deepEqual(allowed.state.appended.map((node) => [node.tagName, node.textContent]), [['SCRIPT', priceBox], ['SCRIPT', compare]],
         'exactly the two missing page scripts are started, once each; the toolbar function comes with the list itself');
     assert.equal(allowed.state.activated.length, 2);
+    assert.deepEqual(allowed.state.registered, [], 'the functions are not on this fake page, so nothing is registered');
     // They are not started a second time by the next update.
     options.onUpdated([block()]);
     assert.equal(allowed.state.appended.length, 2);
@@ -177,6 +179,19 @@ test('a list that needs a page script this page never loaded gets it, where scri
     assert.equal(options.accept(fetchedPage([list()], [priceBox])), false);
     options.onUpdated([block()]);
     assert.equal(allowed.state.appended.length, 2, 'and nothing half-collected is started');
+
+    // Once started, a page script's component is registered with Alpine, whose own start has passed.
+    const late = boot({inlineAllowed: '1'});
+
+    late.document.head.appendChild = (node) => {
+        late.state.appended.push(node);
+        late.window.initWishlist = () => ({});
+    };
+    assert.equal(late.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], ['function initWishlist() {}'])), true);
+    late.state.created[0].onUpdated([block()]);
+    assert.deepEqual(late.state.registered, [['initWishlist', 'function']]);
+    late.state.created[0].onUpdated([block()]);
+    assert.equal(late.state.registered.length, 1, 'once');
 
     // A component on the element standing in the list itself is seen too.
     const direct = block([], [], []);
@@ -194,6 +209,12 @@ test('under a strict policy a list that needs a page script this page never load
 
     assert.equal(strict.state.created[0].accept(fetchedPage([list], ['function initPriceBox() {}'])), false);
     assert.deepEqual(storage, {'bfln-declined': '1'});
+    // A theme built for a strict policy names its components without brackets; they are seen the same way.
+    const bare = block(['known()'], [], ['initWishlist', ' initCompareOnProductList ']);
+
+    assert.equal(strict.state.created[0].accept(fetchedPage([bare], [])), false);
+    assert.equal(boot({inlineAllowed: '0', pageScripts: ['known()'],
+        functions: {initWishlist: () => ({}), initCompareOnProductList: () => ({})}}).state.created[0].accept(fetchedPage([bare], [])), true);
     // With the function already on the page the same list is fine.
     const ready = boot({inlineAllowed: '0', pageScripts: ['known()'], functions: {initPriceBox: () => ({})}});
 
