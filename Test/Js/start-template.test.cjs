@@ -19,52 +19,74 @@ function script(text, src = null) {
     return {
         tagName: 'SCRIPT', textContent: text, type: '', parentNode: null,
         getAttribute: (name) => (name === 'src' ? src : null),
+        hasAttribute: () => false,
         querySelectorAll: () => []
     };
 }
 
-/** An element holding inline scripts with the given texts. */
-function block(texts = [], inputs = []) {
+/** An element holding inline scripts with the given texts and Alpine components with the given x-data. */
+function block(texts = [], inputs = [], components = []) {
+    const parts = {
+        'script:not([src])': texts.map((text) => script(text)),
+        '[x-data]': components.map((expression) => ({getAttribute: () => expression})),
+        'input[name="form_key"]': inputs
+    };
+
     return {
-        tagName: 'DIV', top: 10, scrolled: 0,
+        tagName: 'DIV', top: 10, scrolled: 0, texts,
         getAttribute: () => null,
-        querySelectorAll: (selector) => (selector === 'script:not([src])' ? texts.map((text) => script(text)) : inputs),
+        hasAttribute: () => false,
+        querySelectorAll: (selector) => parts[selector] || [],
         getBoundingClientRect() { return {top: this.top}; },
         scrollIntoView() { this.scrolled++; }
     };
 }
 
-/** A fetched page whose product list is the given nodes, between the two markers. */
-function fetchedPage(nodes) {
+/** A fetched page whose product list is the given nodes, between the two markers, plus page scripts outside it. */
+function fetchedPage(nodes, pageScripts = []) {
     const end = {id: 'bfln-products-end'};
     const start = {id: 'bfln-products-start', nextElementSibling: nodes[0] || end};
+    const inRegion = nodes.flatMap((node) => (node.tagName === 'SCRIPT' ? (node.getAttribute('src') ? [] : [node.textContent]) : node.texts));
 
     nodes.forEach((node, index) => { node.nextElementSibling = nodes[index + 1] || end; });
 
-    return {getElementById: (id) => ({'bfln-products-start': start, 'bfln-products-end': end}[id] || null)};
+    return {
+        getElementById: (id) => ({'bfln-products-start': start, 'bfln-products-end': end}[id] || null),
+        hasAttribute: () => false,
+        getAttribute: () => null,
+        querySelectorAll: (selector) => (selector === 'script:not([src])' ? inRegion.concat(pageScripts).map((text) => script(text)) : [])
+    };
 }
 
 /** Runs the template's script in a page and returns what it handed to BflnCore.create. */
-function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, readyState = 'complete'} = {}) {
+function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, readyState = 'complete', storage = {}, functions = {}} = {}) {
     const attributes = {'data-bfln-ajax': ajax, 'data-bfln-inline': inlineAllowed};
     const marker = {
         hasAttribute: (name) => name in attributes,
         getAttribute: (name) => attributes[name],
         setAttribute: (name, value) => { attributes[name] = value; }
     };
-    const state = {created: [], started: 0, activated: [], listeners: {}, made: []};
+    const state = {created: [], started: 0, activated: [], listeners: {}, made: [], appended: [], storage};
     const document = {
         readyState,
         getElementById: (id) => (id === 'bfln-products-start' ? marker : null),
         querySelectorAll: (selector) => (selector === 'script:not([src])' ? pageScripts.map((text) => script(text)) : []),
         getAttribute: () => null,
+        hasAttribute: () => false,
         tagName: undefined,
+        head: {appendChild: (node) => state.appended.push(node)},
         addEventListener: (type, listener) => { state.listeners[type] = listener; },
         createElement: (tag) => { const made = {tagName: tag.toUpperCase(), type: '', textContent: ''}; state.made.push(made); return made; }
     };
-    const window = {
+    const window = Object.assign({
         hyva: {getFormKey: () => 'KEY123', activateScripts: (element) => state.activated.push(element)}
-    };
+    }, functions);
+
+    if (storage !== null) {
+        window.sessionStorage = {getItem: (key) => (key in storage ? storage[key] : null), setItem: (key, value) => { storage[key] = value; }};
+    } else {
+        Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('storage is blocked'); }});
+    }
 
     if (core) {
         window.BflnCore = {create: (options) => { state.created.push(options); return {start: () => { state.started++; }}; }};
@@ -111,6 +133,71 @@ test('under a strict policy a page whose scripts are not already running here is
     assert.equal(accept(fetchedPage([block(['known()']), block(['new()'])])), false, 'a script this page has not run');
     assert.equal(accept(fetchedPage([])), true, 'an empty list has nothing to decline');
     assert.equal(accept({getElementById: () => null}), true, 'no markers: the shared script deals with that');
+});
+
+test('under a strict policy a declined update is remembered, and later choices are ordinary page loads', () => {
+    const storage = {};
+    const first = boot({inlineAllowed: '0', pageScripts: ['known()'], storage});
+
+    assert.equal(first.state.created[0].ajax, true);
+    assert.equal(first.state.created[0].accept(fetchedPage([block(['known()'])])), true);
+    assert.deepEqual(storage, {}, 'an accepted update leaves no mark');
+    assert.equal(first.state.created[0].accept(fetchedPage([block(['toolbar_123()'])])), false);
+    assert.deepEqual(storage, {'bfln-declined': '1'});
+    // The next page of the same visit does not fetch a page it would only decline again.
+    assert.equal(boot({inlineAllowed: '0', storage}).state.created[0].ajax, false);
+    // Where inline scripts are allowed the mark means nothing.
+    assert.equal(boot({inlineAllowed: '1', storage}).state.created[0].ajax, true);
+    // A browser that refuses storage still works: every choice simply tries.
+    const blocked = boot({inlineAllowed: '0', pageScripts: [], storage: null});
+
+    assert.equal(blocked.state.created[0].ajax, true);
+    assert.equal(blocked.state.created[0].accept(fetchedPage([block(['new()'])])), false);
+});
+
+test('a list that needs a page script this page never loaded gets it, where scripts may be started', () => {
+    // The page was opened on a filter with no products: nothing defined initPriceBox.
+    const priceBox = 'function initPriceBox() { return {}; }';
+    const compare = 'function initCompareOnProductList() { return {}; }';
+    const list = () => block(['function initToolbar_ab12() {}'], [],
+        ['initPriceBox()', ' initCompareOnProductList ( ) ', 'initToolbar_ab12()', '{open: false}', 'initKnown()']);
+    const allowed = boot({inlineAllowed: '1', functions: {initKnown: () => ({})}});
+    const options = allowed.state.created[0];
+
+    assert.equal(options.accept(fetchedPage([list(), list()], [priceBox, compare, 'unrelated()'])), true);
+    options.onUpdated([block(), block()]);
+    assert.deepEqual(allowed.state.appended.map((node) => [node.tagName, node.textContent]), [['SCRIPT', priceBox], ['SCRIPT', compare]],
+        'exactly the two missing page scripts are started, once each; the toolbar function comes with the list itself');
+    assert.equal(allowed.state.activated.length, 2);
+    // They are not started a second time by the next update.
+    options.onUpdated([block()]);
+    assert.equal(allowed.state.appended.length, 2);
+
+    // A component the fetched page does not define anywhere: the browser loads the page instead.
+    assert.equal(options.accept(fetchedPage([list()], [priceBox])), false);
+    options.onUpdated([block()]);
+    assert.equal(allowed.state.appended.length, 2, 'and nothing half-collected is started');
+
+    // A component on the element standing in the list itself is seen too.
+    const direct = block([], [], []);
+
+    direct.hasAttribute = (name) => name === 'x-data';
+    direct.getAttribute = (name) => (name === 'x-data' ? 'initWishlist()' : null);
+    assert.equal(options.accept(fetchedPage([direct], [])), false);
+    assert.equal(options.accept(fetchedPage([direct], ['function initWishlist() {}'])), true);
+});
+
+test('under a strict policy a list that needs a page script this page never loaded is declined', () => {
+    const storage = {};
+    const strict = boot({inlineAllowed: '0', pageScripts: ['known()'], storage});
+    const list = block(['known()'], [], ['initPriceBox()']);
+
+    assert.equal(strict.state.created[0].accept(fetchedPage([list], ['function initPriceBox() {}'])), false);
+    assert.deepEqual(storage, {'bfln-declined': '1'});
+    // With the function already on the page the same list is fine.
+    const ready = boot({inlineAllowed: '0', pageScripts: ['known()'], functions: {initPriceBox: () => ({})}});
+
+    assert.equal(ready.state.created[0].accept(fetchedPage([list], [])), true);
 });
 
 test('a script standing directly in the product list is compared too', () => {

@@ -31,7 +31,8 @@ There is nothing to configure. Every setting, filter setting and filter address 
 Layered Navigation applies to the Hyvä storefront as it does to Luma.
 
 You do not need to rebuild the theme's Tailwind stylesheet: the module ships its own small
-stylesheet and loads it on category and search result pages only.
+stylesheet and loads it only on category and search result pages of store views where BlueFairy
+Layered Navigation is enabled.
 
 ## What it changes
 
@@ -63,7 +64,8 @@ script is registered with Hyvä's CSP view model, and the navigation uses no inl
 
 When a filtered product list arrives with a script the page is not already running, and the
 store's policy does not allow starting it, the page is loaded the ordinary way instead of being
-updated in place. The shopper sees the same result with a page load.
+updated in place. The shopper sees the same result with a page load. After the first time that
+happens in a visit, the shopper's later choices load the page directly.
 
 ## Uninstall
 

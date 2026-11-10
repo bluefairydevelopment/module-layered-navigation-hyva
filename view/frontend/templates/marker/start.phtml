@@ -13,6 +13,7 @@ $config = $viewModel->getScriptConfig();
 // Under a strict content security policy a script that arrives with a fetched page cannot be started.
 $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
 ?>
+<link rel="stylesheet" href="<?= $escaper->escapeUrl($block->getViewFileUrl('BlueFairy_LayeredNavigationHyva::css/bfln.css')) ?>">
 <div id="bfln-products-start" class="bfln-marker-start" hidden
      data-bfln-ajax="<?= $config['ajax'] ? '1' : '0' ?>"
      data-bfln-inline="<?= $inlineAllowed ? '1' : '0' ?>"></div>
@@ -20,6 +21,46 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
 <script>
     (function () {
         'use strict';
+
+        var DECLINED = 'bfln-declined';
+
+        // Once this store's policy has made an update impossible, later choices skip the wasted fetch.
+        function hasDeclined() {
+            try {
+                return window.sessionStorage.getItem(DECLINED) === '1';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function rememberDecline() {
+            try {
+                window.sessionStorage.setItem(DECLINED, '1');
+            } catch (e) {
+                // No storage: the next choice simply tries again.
+            }
+        }
+
+        // The Alpine components a node asks for by name, as in x-data="initPriceBox()".
+        function componentNames(root) {
+            var nodes = Array.from(root.querySelectorAll('[x-data]'));
+
+            if (root.hasAttribute && root.hasAttribute('x-data')) {
+                nodes.unshift(root);
+            }
+
+            return nodes.map(function (node) {
+                var match = /^\s*([A-Za-z_$][\w$]*)\s*\(/.exec(node.getAttribute('x-data') || '');
+
+                return match ? match[1] : null;
+            }).filter(Boolean);
+        }
+
+        function defines(name) {
+            return function (text) {
+                return text.indexOf('function ' + name) !== -1;
+            };
+        }
 
         function isInlineScript(node) {
             return node.tagName === 'SCRIPT' && !node.getAttribute('src');
@@ -63,27 +104,61 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                 return;
             }
             marker.setAttribute('data-bfln-started', '');
-            var inlineAllowed = marker.getAttribute('data-bfln-inline') === '1';
+            var inlineAllowed = marker.getAttribute('data-bfln-inline') === '1',
+                pending = [];
 
             window.BflnCore.create({
                 window: window,
                 document: document,
-                ajax: marker.getAttribute('data-bfln-ajax') === '1',
+                ajax: marker.getAttribute('data-bfln-ajax') === '1' && !(!inlineAllowed && hasDeclined()),
 
-                // A product list can bring scripts of its own. When the store's policy forbids starting
-                // them, a page whose scripts are not already running here is loaded the ordinary way.
+                // A product list can bring scripts of its own, and can need page scripts the list it replaces
+                // never asked for (a list with no products loads none). Where the store's policy allows it
+                // they are started after the update; where it does not, the page is loaded the ordinary way.
                 accept: function (fetched) {
                     var start = fetched.getElementById('bfln-products-start'),
                         end = fetched.getElementById('bfln-products-end'),
-                        known, node;
+                        nodes = [],
+                        regionTexts = [],
+                        known, node, missing, outside, found, i;
 
-                    if (inlineAllowed || !start || !end) {
+                    pending = [];
+                    if (!start || !end) {
                         return true;
                     }
-                    known = scriptTexts(document);
                     for (node = start.nextElementSibling; node && node !== end; node = node.nextElementSibling) {
-                        if (scriptTexts(node).some(function (text) { return known.indexOf(text) === -1; })) {
+                        nodes.push(node);
+                        regionTexts = regionTexts.concat(scriptTexts(node));
+                    }
+                    missing = [];
+                    nodes.forEach(function (item) {
+                        componentNames(item).forEach(function (name) {
+                            if (typeof window[name] !== 'function' && !regionTexts.some(defines(name)) &&
+                                missing.indexOf(name) === -1) {
+                                missing.push(name);
+                            }
+                        });
+                    });
+                    if (!inlineAllowed) {
+                        known = scriptTexts(document);
+                        if (missing.length || regionTexts.some(function (text) { return known.indexOf(text) === -1; })) {
+                            rememberDecline();
+
                             return false;
+                        }
+
+                        return true;
+                    }
+                    outside = scriptTexts(fetched).filter(function (text) { return regionTexts.indexOf(text) === -1; });
+                    for (i = 0; i < missing.length; i++) {
+                        found = outside.filter(defines(missing[i]))[0];
+                        if (!found) {
+                            pending = [];
+
+                            return false;
+                        }
+                        if (pending.indexOf(found) === -1) {
+                            pending.push(found);
                         }
                     }
 
@@ -92,6 +167,15 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
 
                 onUpdated: function (elements) {
                     var formKey = window.hyva && window.hyva.getFormKey ? window.hyva.getFormKey() : '';
+
+                    // Page scripts the new list needs come first, so its components find them.
+                    pending.forEach(function (text) {
+                        var script = document.createElement('script');
+
+                        script.textContent = text;
+                        document.head.appendChild(script);
+                    });
+                    pending = [];
 
                     elements.forEach(function (element) {
                         if (formKey) {

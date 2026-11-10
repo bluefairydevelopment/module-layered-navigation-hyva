@@ -66,7 +66,8 @@ class PackageTest extends TestCase
             self::assertSame(['bluefairy.layerednav.products.start'], $m[1]);
             self::assertStringContainsString('name="bluefairy.layerednav.products.start"', $baseLayout);
             self::assertStringContainsString('template="BlueFairy_LayeredNavigationHyva::marker/start.phtml"', $xml);
-            self::assertStringContainsString('<css src="BlueFairy_LayeredNavigationHyva::css/bfln.css"/>', $xml);
+            // The stylesheet comes with the template, which the base module only renders where it is switched on.
+            self::assertStringNotContainsString('<css ', $xml);
         }
     }
 
@@ -87,7 +88,8 @@ class PackageTest extends TestCase
                     }
                 }
             }
-            preg_match_all("/'(bfln-[a-z-]+|is-[a-z]+)'/", $source, $literals);
+            // Class names in PHP and JavaScript strings, also when a space leads them: ' is-selected'.
+            preg_match_all("/'\s*(bfln-[a-z-]+|is-[a-z]+)'/", $source, $literals);
             foreach ($literals[1] as $class) {
                 $used[$class] = $file;
             }
@@ -95,6 +97,10 @@ class PackageTest extends TestCase
         // Built from the filter type in the template: bfln-filter-<type>. Only swatch has a look of its own.
         unset($used['bfln-filter-'], $used['bfln-nav'], $used['bfln-products-start'], $used['bfln-products-end'], $used['bfln-status']);
         $used['bfln-status'] = 'end.phtml';
+        $used['bfln-filter-swatch'] = 'view.phtml';
+        foreach (['is-selected', 'is-disabled', 'bfln-option-extra', 'is-collapsed', 'is-open'] as $expected) {
+            self::assertArrayHasKey($expected, $used, 'the scan must see ' . $expected . ', or it has lost its subject');
+        }
 
         self::assertGreaterThan(30, count($used), 'the scan found the classes the navigation uses');
         $unstyled = array_keys(array_diff_key($used, $defined));
@@ -111,6 +117,12 @@ class PackageTest extends TestCase
         self::assertSame(0, preg_match_all('/\son[a-z]+="|x-data|@click|x-on:|:class=/', $template), 'no inline handlers or Alpine expressions');
         self::assertSame(0, preg_match_all('/\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\()/', $template));
         self::assertStringContainsString("getViewFileUrl('BlueFairy_LayeredNavigation::js/bfln-core.js')", $template);
+        self::assertSame(
+            1,
+            substr_count($template, "<link rel=\"stylesheet\" href=\"<?= \$escaper->escapeUrl(\$block->getViewFileUrl('BlueFairy_LayeredNavigationHyva::css/bfln.css')) ?>\">"),
+            'the stylesheet is loaded by the template'
+        );
+        self::assertFileExists(self::ROOT . '/view/frontend/web/css/bfln.css');
         self::assertStringContainsString('id="bfln-products-start"', $template, 'the marker the shared script looks for');
         self::assertStringContainsString('class="bfln-marker-start"', $template);
         self::assertSame(0, preg_match_all('/<\?=\s*+(?!\$escaper->escape|\$config\[\'ajax\'\] \? |\$inlineAllowed \? )/', $template), 'every output is escaped or a fixed literal');

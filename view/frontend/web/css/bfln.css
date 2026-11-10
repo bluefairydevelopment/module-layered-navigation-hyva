@@ -131,7 +131,7 @@
     font-weight: 600;
     justify-content: space-between;
     padding: .75rem 0;
-    text-align: left;
+    text-align: start;
     width: 100%;
 }
 
@@ -140,7 +140,7 @@
     border-right: 2px solid var(--bfln-muted);
     content: '';
     height: .45rem;
-    margin-right: .25rem;
+    margin-inline-end: .25rem;
     transform: rotate(-135deg);
     width: .45rem;
 }
@@ -207,7 +207,7 @@ a.bfln-option-link:focus {
     border-right: 2px solid #fff;
     content: '';
     height: .5rem;
-    left: .3rem;
+    inset-inline-start: .3rem;
     position: absolute;
     top: .05rem;
     transform: rotate(45deg);
@@ -219,7 +219,7 @@ a.bfln-option-link:focus {
     border-radius: 50%;
     content: '';
     height: .375rem;
-    left: .25rem;
+    inset-inline-start: .25rem;
     position: absolute;
     top: .25rem;
     width: .375rem;
@@ -254,7 +254,7 @@ a.bfln-option-link:focus {
 }
 
 .bfln-filter-swatch .bfln-option-count {
-    padding-right: .25rem;
+    padding-inline-end: .25rem;
 }
 
 .bfln-swatch {
@@ -413,6 +413,17 @@ a.bfln-option-link:focus {
 .bfln-busy .bfln-marker-end ~ * {
     opacity: 1;
     pointer-events: auto;
+}
+
+/* Without JavaScript nothing can open the filters on a small screen, so they are simply shown. */
+@media (scripting: none) {
+    .bfln-mobile-toggle {
+        display: none;
+    }
+
+    .bfln-body {
+        display: block;
+    }
 }
 
 @media (min-width: 768px) {
