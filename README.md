@@ -8,11 +8,15 @@ slider, swatches, filter addresses and no-reload updates, without RequireJS or K
 | Package | `bluefairy/module-layered-navigation-hyva` |
 | Module | `BlueFairy_LayeredNavigationHyva` |
 | Requires | `bluefairy/module-layered-navigation` 1.0 or later, Hyvä Theme module 1.5 or later |
-| Magento | Open Source and Adobe Commerce 2.4.8 and 2.4.9 |
+| Magento | Magento Open Source 2.4.8 and 2.4.9 |
 | PHP | 8.3, 8.4, 8.5 |
 | Licence | MIT |
 
 ## Install
+
+The package comes from the same Private Packagist repository as
+`bluefairy/module-layered-navigation`. Set the repository and your credentials up first, as that
+package's README describes under "Add the Private Packagist repository".
 
 ```bash
 composer require bluefairy/module-layered-navigation-hyva

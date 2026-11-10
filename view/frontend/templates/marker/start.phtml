@@ -21,10 +21,39 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
     (function () {
         'use strict';
 
+        function isInlineScript(node) {
+            return node.tagName === 'SCRIPT' && !node.getAttribute('src');
+        }
+
+        // The inline scripts inside a node, and the node itself when it is one.
         function scriptTexts(root) {
-            return Array.from(root.querySelectorAll('script:not([src])')).map(function (script) {
+            var scripts = Array.from(root.querySelectorAll('script:not([src])'));
+
+            if (isInlineScript(root)) {
+                scripts.unshift(root);
+            }
+
+            return scripts.map(function (script) {
                 return script.textContent.trim();
             }).filter(Boolean);
+        }
+
+        // A script copied from a fetched page does not run. One standing directly in the product
+        // list is replaced with a copy that does; Hyva's own helper does the same for the ones inside.
+        function activate(element) {
+            var fresh;
+
+            if (!isInlineScript(element)) {
+                window.hyva.activateScripts(element);
+
+                return;
+            }
+            fresh = document.createElement('script');
+            if (element.type) {
+                fresh.type = element.type;
+            }
+            fresh.textContent = element.textContent;
+            element.parentNode.replaceChild(fresh, element);
         }
 
         function start() {
@@ -71,7 +100,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                             });
                         }
                         if (inlineAllowed && window.hyva && window.hyva.activateScripts) {
-                            window.hyva.activateScripts(element);
+                            activate(element);
                         }
                     });
                     if (elements.length > 1 && elements[1].getBoundingClientRect().top < 0) {
