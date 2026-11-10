@@ -15,10 +15,11 @@ const inline = template.match(/<script>\n([\s\S]*?)<\/script>/);
 assert.ok(inline, 'the template has an inline script');
 const SOURCE = inline[1];
 
-function script(text, src = null) {
+function script(text, src = null, type = null, inNoscript = false) {
     return {
-        tagName: 'SCRIPT', textContent: text, type: '', parentNode: null,
-        getAttribute: (name) => (name === 'src' ? src : null),
+        tagName: 'SCRIPT', textContent: text, type: type || '', parentNode: null,
+        getAttribute: (name) => ({src, type}[name] ?? null),
+        closest: (selector) => (selector === 'noscript' && inNoscript ? {} : null),
         hasAttribute: () => false,
         querySelectorAll: () => []
     };
@@ -54,12 +55,14 @@ function fetchedPage(nodes, pageScripts = []) {
         getElementById: (id) => ({'bfln-products-start': start, 'bfln-products-end': end}[id] || null),
         hasAttribute: () => false,
         getAttribute: () => null,
-        querySelectorAll: (selector) => (selector === 'script:not([src])' ? inRegion.concat(pageScripts).map((text) => script(text)) : [])
+        querySelectorAll: (selector) => (selector === 'script:not([src])'
+            ? inRegion.map((text) => script(text)).concat(pageScripts.map((entry) => (typeof entry === 'string' ? script(entry) : entry)))
+            : [])
     };
 }
 
 /** Runs the template's script in a page and returns what it handed to BflnCore.create. */
-function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, readyState = 'complete', storage = {}, functions = {}} = {}) {
+function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, readyState = 'complete', storage = {}, functions = {}, inert = false} = {}) {
     const attributes = {'data-bfln-ajax': ajax, 'data-bfln-inline': inlineAllowed};
     const marker = {
         hasAttribute: (name) => name in attributes,
@@ -74,11 +77,20 @@ function boot({ajax = '1', inlineAllowed = '0', pageScripts = [], core = true, r
         getAttribute: () => null,
         hasAttribute: () => false,
         tagName: undefined,
-        head: {appendChild: (node) => state.appended.push(node)},
+        // A started script puts the functions it declares on the page, unless the test says it stays inert.
+        head: {appendChild: (node) => {
+            state.appended.push(node);
+            if (!inert) {
+                for (const match of node.textContent.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(/g)) {
+                    window[match[1]] = () => ({});
+                }
+            }
+        }},
         addEventListener: (type, listener) => { state.listeners[type] = listener; },
         createElement: (tag) => { const made = {tagName: tag.toUpperCase(), type: '', textContent: ''}; state.made.push(made); return made; }
     };
     const window = Object.assign({
+        location: {reloads: 0, reload() { this.reloads++; }},
         Alpine: {data: (name, fn) => state.registered.push([name, typeof fn])},
         hyva: {getFormKey: () => 'KEY123', activateScripts: (element) => state.activated.push(element)}
     }, functions);
@@ -147,8 +159,8 @@ test('under a strict policy a declined update is remembered, and later choices a
     assert.deepEqual(storage, {'bfln-declined': '1'});
     // The next page of the same visit does not fetch a page it would only decline again.
     assert.equal(boot({inlineAllowed: '0', storage}).state.created[0].ajax, false);
-    // Where inline scripts are allowed the mark means nothing.
-    assert.equal(boot({inlineAllowed: '1', storage}).state.created[0].ajax, true);
+    // The mark holds for the visit whatever the policy says on a later page.
+    assert.equal(boot({inlineAllowed: '1', storage}).state.created[0].ajax, false);
     // A browser that refuses storage still works: every choice simply tries.
     const blocked = boot({inlineAllowed: '0', pageScripts: [], storage: null});
 
@@ -170,28 +182,60 @@ test('a list that needs a page script this page never loaded gets it, where scri
     assert.deepEqual(allowed.state.appended.map((node) => [node.tagName, node.textContent]), [['SCRIPT', priceBox], ['SCRIPT', compare]],
         'exactly the two missing page scripts are started, once each; the toolbar function comes with the list itself');
     assert.equal(allowed.state.activated.length, 2);
-    assert.deepEqual(allowed.state.registered, [], 'the functions are not on this fake page, so nothing is registered');
+    assert.deepEqual(allowed.state.registered.map((entry) => entry[0]), ['initPriceBox', 'initCompareOnProductList'],
+        'and their components are registered with Alpine, whose own start has passed');
     // They are not started a second time by the next update.
     options.onUpdated([block()]);
     assert.equal(allowed.state.appended.length, 2);
 
     // A component the fetched page does not define anywhere: the browser loads the page instead.
-    assert.equal(options.accept(fetchedPage([list()], [priceBox])), false);
-    options.onUpdated([block()]);
-    assert.equal(allowed.state.appended.length, 2, 'and nothing half-collected is started');
+    const partial = boot({inlineAllowed: '1', functions: {initKnown: () => ({})}});
+
+    assert.equal(partial.state.created[0].accept(fetchedPage([list()], [priceBox])), false);
+    partial.state.created[0].onUpdated([block()]);
+    assert.equal(partial.state.appended.length, 0, 'and nothing half-collected is started');
 
     // Once started, a page script's component is registered with Alpine, whose own start has passed.
     const late = boot({inlineAllowed: '1'});
 
-    late.document.head.appendChild = (node) => {
-        late.state.appended.push(node);
-        late.window.initWishlist = () => ({});
-    };
     assert.equal(late.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], ['function initWishlist() {}'])), true);
     late.state.created[0].onUpdated([block()]);
     assert.deepEqual(late.state.registered, [['initWishlist', 'function']]);
     late.state.created[0].onUpdated([block()]);
     assert.equal(late.state.registered.length, 1, 'once');
+
+    // A data block or a script inside noscript that happens to hold the words is not a page script.
+    const dataOnly = boot({inlineAllowed: '1'});
+
+    assert.equal(dataOnly.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], [
+        script('{"note": "function initWishlist() {}"}', null, 'application/ld+json'),
+        script('function initWishlist() {}', null, 'text/x-magento-init'),
+        script('function initWishlist() {}', null, null, true)
+    ])), false);
+    assert.equal(dataOnly.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], [
+        script('function initWishlist() {}', null, 'text/javascript')
+    ])), true);
+
+    // One script that declares two of the missing functions is started once; a name with a dollar sign is found.
+    const both = 'function initA() {} function $initB() {}';
+    const twice = boot({inlineAllowed: '1'});
+
+    assert.equal(twice.state.created[0].accept(fetchedPage([block([], [], ['initA()', '$initB()'])], ['function initB() {}', both])), true);
+    twice.state.created[0].onUpdated([block()]);
+    assert.deepEqual(twice.state.appended.map((node) => node.textContent), [both]);
+    assert.deepEqual(twice.state.registered.map((entry) => entry[0]), ['initA', '$initB']);
+    assert.equal(twice.window.location.reloads, 0);
+
+    // The script was started but the function never appeared (refused after all, or kept inside a closure):
+    // the page is loaded, and the visit stops trying.
+    const refusedStorage = {};
+    const refused = boot({inlineAllowed: '1', storage: refusedStorage, inert: true});
+
+    assert.equal(refused.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], ['function initWishlist() {}'])), true);
+    refused.state.created[0].onUpdated([block(['x()'])]);
+    assert.equal(refused.window.location.reloads, 1);
+    assert.deepEqual(refusedStorage, {'bfln-declined': '1'});
+    assert.deepEqual(refused.state.activated, [], 'nothing more is done to a page about to be replaced');
 
     // A script that declares a longer name beginning the same way is not the one.
     const sidebar = 'function initWishlistOnWishlistSidebar() {}';

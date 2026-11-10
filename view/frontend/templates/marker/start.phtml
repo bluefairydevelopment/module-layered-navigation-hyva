@@ -24,7 +24,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
 
         var DECLINED = 'bfln-declined';
 
-        // Once this store's policy has made an update impossible, later choices skip the wasted fetch.
+        // Once an update has proved impossible on this store, later choices of the visit skip the wasted fetch.
         function hasDeclined() {
             try {
                 return window.sessionStorage.getItem(DECLINED) === '1';
@@ -83,6 +83,18 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             }).filter(Boolean);
         }
 
+        // The page's own JavaScript: not data blocks of another type, and not what a noscript element holds.
+        function pageScriptTexts(root) {
+            return Array.from(root.querySelectorAll('script:not([src])')).filter(function (script) {
+                var type = (script.getAttribute('type') || '').toLowerCase();
+
+                return (type === '' || type === 'text/javascript' || type === 'application/javascript' || type === 'module') &&
+                    !(script.closest && script.closest('noscript'));
+            }).map(function (script) {
+                return script.textContent.trim();
+            }).filter(Boolean);
+        }
+
         // A script copied from a fetched page does not run. One standing directly in the product
         // list is replaced with a copy that does; Hyva's own helper does the same for the ones inside.
         function activate(element) {
@@ -115,7 +127,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             window.BflnCore.create({
                 window: window,
                 document: document,
-                ajax: marker.getAttribute('data-bfln-ajax') === '1' && !(!inlineAllowed && hasDeclined()),
+                ajax: marker.getAttribute('data-bfln-ajax') === '1' && !hasDeclined(),
 
                 // A product list can bring scripts of its own, and can need page scripts the list it replaces
                 // never asked for (a list with no products loads none). Where the store's policy allows it
@@ -155,7 +167,7 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
 
                         return true;
                     }
-                    outside = scriptTexts(fetched).filter(function (text) { return regionTexts.indexOf(text) === -1; });
+                    outside = pageScriptTexts(fetched);
                     for (i = 0; i < missing.length; i++) {
                         found = outside.filter(defines(missing[i]))[0];
                         if (!found) {
@@ -174,7 +186,8 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                 },
 
                 onUpdated: function (elements) {
-                    var formKey = window.hyva && window.hyva.getFormKey ? window.hyva.getFormKey() : '';
+                    var formKey = window.hyva && window.hyva.getFormKey ? window.hyva.getFormKey() : '',
+                        stillMissing;
 
                     // Page scripts the new list needs come first, so its components find them.
                     pending.forEach(function (text) {
@@ -184,6 +197,9 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                         document.head.appendChild(script);
                     });
                     // A strict-policy theme registers its components when Alpine starts, which has passed.
+                    stillMissing = pendingNames.filter(function (name) {
+                        return typeof window[name] !== 'function';
+                    });
                     pendingNames.forEach(function (name) {
                         if (window.Alpine && typeof window.Alpine.data === 'function' && typeof window[name] === 'function') {
                             window.Alpine.data(name, window[name]);
@@ -191,6 +207,15 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
                     });
                     pending = [];
                     pendingNames = [];
+                    // The store's policy refused the script after all, or the theme keeps the function to
+                    // itself: the list would stand there with dead buttons. The page is loaded instead, and
+                    // later choices in this visit load it directly.
+                    if (stillMissing.length) {
+                        rememberDecline();
+                        window.location.reload();
+
+                        return;
+                    }
 
                     elements.forEach(function (element) {
                         if (formKey) {
