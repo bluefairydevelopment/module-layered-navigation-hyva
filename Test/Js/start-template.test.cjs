@@ -193,6 +193,15 @@ test('a list that needs a page script this page never loaded gets it, where scri
     late.state.created[0].onUpdated([block()]);
     assert.equal(late.state.registered.length, 1, 'once');
 
+    // A script that declares a longer name beginning the same way is not the one.
+    const sidebar = 'function initWishlistOnWishlistSidebar() {}';
+    const fresh = boot({inlineAllowed: '1'});
+
+    assert.equal(fresh.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], [sidebar])), false);
+    assert.equal(fresh.state.created[0].accept(fetchedPage([block([], [], ['initWishlist'])], [sidebar, 'function  initWishlist () {}'])), true);
+    fresh.state.created[0].onUpdated([block()]);
+    assert.deepEqual(fresh.state.appended.map((node) => node.textContent), ['function  initWishlist () {}']);
+
     // A component on the element standing in the list itself is seen too.
     const direct = block([], [], []);
 

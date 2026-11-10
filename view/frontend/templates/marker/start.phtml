@@ -57,9 +57,12 @@ $inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
             }).filter(Boolean);
         }
 
+        // Whether a script declares the function, and not one whose name only begins the same way.
         function defines(name) {
+            var declaration = new RegExp('function\\s+' + name.replace(/\$/g, '\\$') + '\\s*\\(');
+
             return function (text) {
-                return text.indexOf('function ' + name) !== -1;
+                return declaration.test(text);
             };
         }
 
