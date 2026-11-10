@@ -113,7 +113,7 @@ class PackageTest extends TestCase
         self::assertStringContainsString("getViewFileUrl('BlueFairy_LayeredNavigation::js/bfln-core.js')", $template);
         self::assertStringContainsString('id="bfln-products-start"', $template, 'the marker the shared script looks for');
         self::assertStringContainsString('class="bfln-marker-start"', $template);
-        self::assertSame(0, preg_match_all('/<\?=\s*(?!\$escaper->escape|\$config\[\'ajax\'\] \? |\$inlineAllowed \? )/', $template), 'every output is escaped or a fixed literal');
+        self::assertSame(0, preg_match_all('/<\?=\s*+(?!\$escaper->escape|\$config\[\'ajax\'\] \? |\$inlineAllowed \? )/', $template), 'every output is escaped or a fixed literal');
         self::assertFileExists($this->basePath('view/frontend/web/js/bfln-core.js'));
     }
 

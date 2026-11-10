@@ -292,6 +292,10 @@ a.bfln-option-link:focus {
     text-decoration: underline;
 }
 
+.bfln-slider {
+    padding-top: .125rem;
+}
+
 .bfln-slider-track {
     height: 1.75rem;
     margin: .25rem 0 .625rem;
