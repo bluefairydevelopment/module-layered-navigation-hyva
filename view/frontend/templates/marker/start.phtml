@@ -1,0 +1,91 @@
+<?php
+/**
+ * Copyright © 2026 Blue Fairy Development. All rights reserved.
+ */
+declare(strict_types=1);
+
+/** @var \BlueFairy\LayeredNavigation\Block\Marker $block */
+/** @var \Magento\Framework\Escaper $escaper */
+/** @var \Hyva\Theme\ViewModel\HyvaCsp $hyvaCsp */
+/** @var \BlueFairy\LayeredNavigation\ViewModel\Navigation $viewModel */
+$viewModel = $block->getData('bfln_view_model');
+$config = $viewModel->getScriptConfig();
+// Under a strict content security policy a script that arrives with a fetched page cannot be started.
+$inlineAllowed = $hyvaCsp->getScriptSrcPolicy()->isInlineAllowed();
+?>
+<div id="bfln-products-start" class="bfln-marker-start" hidden
+     data-bfln-ajax="<?= $config['ajax'] ? '1' : '0' ?>"
+     data-bfln-inline="<?= $inlineAllowed ? '1' : '0' ?>"></div>
+<script src="<?= $escaper->escapeUrl($block->getViewFileUrl('BlueFairy_LayeredNavigation::js/bfln-core.js')) ?>" defer></script>
+<script>
+    (function () {
+        'use strict';
+
+        function scriptTexts(root) {
+            return Array.from(root.querySelectorAll('script:not([src])')).map(function (script) {
+                return script.textContent.trim();
+            }).filter(Boolean);
+        }
+
+        function start() {
+            var marker = document.getElementById('bfln-products-start');
+
+            if (!marker || !window.BflnCore || marker.hasAttribute('data-bfln-started')) {
+                return;
+            }
+            marker.setAttribute('data-bfln-started', '');
+            var inlineAllowed = marker.getAttribute('data-bfln-inline') === '1';
+
+            window.BflnCore.create({
+                window: window,
+                document: document,
+                ajax: marker.getAttribute('data-bfln-ajax') === '1',
+
+                // A product list can bring scripts of its own. When the store's policy forbids starting
+                // them, a page whose scripts are not already running here is loaded the ordinary way.
+                accept: function (fetched) {
+                    var start = fetched.getElementById('bfln-products-start'),
+                        end = fetched.getElementById('bfln-products-end'),
+                        known, node;
+
+                    if (inlineAllowed || !start || !end) {
+                        return true;
+                    }
+                    known = scriptTexts(document);
+                    for (node = start.nextElementSibling; node && node !== end; node = node.nextElementSibling) {
+                        if (scriptTexts(node).some(function (text) { return known.indexOf(text) === -1; })) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                },
+
+                onUpdated: function (elements) {
+                    var formKey = window.hyva && window.hyva.getFormKey ? window.hyva.getFormKey() : '';
+
+                    elements.forEach(function (element) {
+                        if (formKey) {
+                            element.querySelectorAll('input[name="form_key"]').forEach(function (input) {
+                                input.value = formKey;
+                            });
+                        }
+                        if (inlineAllowed && window.hyva && window.hyva.activateScripts) {
+                            window.hyva.activateScripts(element);
+                        }
+                    });
+                    if (elements.length > 1 && elements[1].getBoundingClientRect().top < 0) {
+                        elements[1].scrollIntoView();
+                    }
+                }
+            }).start();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start);
+        } else {
+            start();
+        }
+    })();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

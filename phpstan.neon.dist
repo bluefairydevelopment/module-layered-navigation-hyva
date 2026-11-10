@@ -1,0 +1,12 @@
+# Static analysis for module-layered-navigation-hyva. Not run on the owner's Mac; run on a rig.
+#   MAGENTO_ROOT=/path/to/magento /path/to/magento/vendor/bin/phpstan analyse -c phpstan.neon.dist
+parameters:
+    phpVersion: 80300
+    level: 5
+    paths:
+        - registration.php
+    excludePaths:
+        - */Test/*
+    bootstrapFiles:
+        - Test/bootstrap.php
+    treatPhpDocTypesAsCertain: false
