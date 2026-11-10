@@ -114,7 +114,10 @@ class PackageTest extends TestCase
         $template = (string) file_get_contents(self::ROOT . '/view/frontend/templates/marker/start.phtml');
         self::assertSame(1, substr_count($template, '$hyvaCsp->registerInlineScript()'), 'the inline script is registered');
         self::assertSame(1, preg_match_all('/<script>/', $template), 'and it is the only inline script');
-        self::assertSame(0, preg_match_all('/\son[a-z]+="|x-data|@click|x-on:|:class=/', $template), 'no inline handlers or Alpine expressions');
+        // In the markup, that is: the script reads x-data attributes of fetched pages and may name them.
+        $markup = (string) preg_replace('#<script>.*?</script>#s', '', $template);
+        self::assertStringNotContainsString('function start()', $markup, 'the script was taken out');
+        self::assertSame(0, preg_match_all('/\son[a-z]+="|x-data|@click|x-on:|:class=/', $markup), 'no inline handlers or Alpine expressions');
         self::assertSame(0, preg_match_all('/\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\()/', $template));
         self::assertStringContainsString("getViewFileUrl('BlueFairy_LayeredNavigation::js/bfln-core.js')", $template);
         self::assertSame(
