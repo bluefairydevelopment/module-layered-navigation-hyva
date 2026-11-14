@@ -12,6 +12,7 @@
     --bfln-muted: #6b7280;
     --bfln-accent: #1d4ed8;
     --bfln-surface: #fff;
+
     color: var(--bfln-text);
     margin-bottom: 2.5rem;
 }
@@ -19,7 +20,7 @@
 .bfln-sr,
 .bfln-status {
     border: 0;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     height: 1px;
     margin: -1px;
     overflow: hidden;
@@ -179,6 +180,14 @@ a.bfln-option-link:focus {
     color: var(--bfln-accent);
 }
 
+.bfln-filter-swatch .bfln-option-link {
+    border: 1px solid var(--bfln-border);
+    border-radius: .25rem;
+    gap: .25rem;
+    min-height: 1.875rem;
+    padding: .125rem;
+}
+
 .bfln-option.is-disabled > .bfln-option-link {
     color: var(--bfln-muted);
     cursor: default;
@@ -240,14 +249,6 @@ a.bfln-option-link:focus {
     gap: .5rem;
 }
 
-.bfln-filter-swatch .bfln-option-link {
-    border: 1px solid var(--bfln-border);
-    border-radius: .25rem;
-    gap: .25rem;
-    min-height: 1.875rem;
-    padding: .125rem;
-}
-
 .bfln-filter-swatch .is-selected > .bfln-option-link {
     border-color: var(--bfln-accent);
     box-shadow: 0 0 0 1px var(--bfln-accent);
@@ -265,7 +266,7 @@ a.bfln-option-link:focus {
 }
 
 .bfln-swatch-color {
-    border: 1px solid rgba(0, 0, 0, .15);
+    border: 1px solid rgb(0 0 0 / 15%);
 }
 
 .bfln-swatch-image {
@@ -314,7 +315,6 @@ a.bfln-option-link:focus {
 }
 
 .bfln-slider-range {
-    -webkit-appearance: none;
     appearance: none;
     background: none;
     border: 0;
@@ -329,7 +329,7 @@ a.bfln-option-link:focus {
 }
 
 .bfln-slider-range::-webkit-slider-runnable-track {
-    -webkit-appearance: none;
+    appearance: none;
     background: none;
     height: 1.75rem;
 }
@@ -340,7 +340,7 @@ a.bfln-option-link:focus {
 }
 
 .bfln-slider-range::-webkit-slider-thumb {
-    -webkit-appearance: none;
+    appearance: none;
     background: #fff;
     border: 2px solid var(--bfln-accent);
     border-radius: 50%;
@@ -366,11 +366,11 @@ a.bfln-option-link:focus {
 }
 
 .bfln-slider-range:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px rgba(29, 78, 216, .35);
+    box-shadow: 0 0 0 3px rgb(29 78 216 / 35%);
 }
 
 .bfln-slider-range:focus-visible::-moz-range-thumb {
-    box-shadow: 0 0 0 3px rgba(29, 78, 216, .35);
+    box-shadow: 0 0 0 3px rgb(29 78 216 / 35%);
 }
 
 .bfln-slider-fields {
@@ -426,7 +426,7 @@ a.bfln-option-link:focus {
     }
 }
 
-@media (min-width: 768px) {
+@media (width >= 768px) {
     .bfln-mobile-toggle {
         display: none;
     }
