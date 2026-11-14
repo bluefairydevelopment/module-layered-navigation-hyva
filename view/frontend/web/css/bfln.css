@@ -426,7 +426,6 @@ a.bfln-option-link:focus {
     }
 }
 
-/* stylelint-disable-next-line media-feature-range-notation -- range syntax drops the block in Safari < 16.4 / Chrome < 104 */
 @media (min-width: 768px) {
     .bfln-mobile-toggle {
         display: none;
